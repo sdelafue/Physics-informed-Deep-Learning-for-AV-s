@@ -1,0 +1,5 @@
+# Ignore datasets folder
+*.bin
+
+# Ignore vscode files
+.vscode/
