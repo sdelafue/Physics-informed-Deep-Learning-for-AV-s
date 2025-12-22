@@ -8,6 +8,7 @@ Before starting, ensure you have the following installed:
 1. **Julia** (Latest stable release): [Download Here](https://julialang.org/downloads/)
 2. **VS Code**: [Download Here](https://code.visualstudio.com/)
 3. **Julia Extension for VS Code**: Search for "Julia" in the VS Code Extensions marketplace and install the one by *Julia Computing*.
+4. **Download Dataset**: Be sure to download the Nuscenes LiDAR dataset for the visualizer to work [Download Here](https://drive.google.com/drive/folders/1inqw42rhqYcIGyYjI8au4KTZBKwucqO7)
 
 ## Environment Setup
 
