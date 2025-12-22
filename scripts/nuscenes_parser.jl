@@ -1,4 +1,5 @@
 using Statistics
+using Random
 
 # === GRID CONFIGURATION ===
 const GRID_SIZE = 100
@@ -136,7 +137,7 @@ println("\n✓ Found $(length(bin_files)) LiDAR scan(s)")
 
 if !isempty(bin_files)
     # Process the first file
-    test_file = bin_files[1]
+    test_file = bin_files[rand(1:404)]  # Randomly select a file for demonstration
     println("📊 Processing: $(basename(test_file))")
     
     # Parse binary data
