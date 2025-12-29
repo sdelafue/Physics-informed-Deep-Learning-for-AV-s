@@ -1,5 +1,8 @@
 [deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 Parquet = "626c502c-15b0-58ad-a749-f091afb673ae"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
