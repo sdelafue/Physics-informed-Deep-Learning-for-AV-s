@@ -6,3 +6,5 @@
 
 # Ignore json files
 *.json
+
+debug_sandbox.jl

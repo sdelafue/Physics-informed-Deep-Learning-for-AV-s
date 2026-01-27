@@ -6,8 +6,8 @@ using LinearAlgebra
 using Statistics
 
 # Define file paths
-csv_filepath = joinpath("datasets", "processed", "lidar_scans_sequential.csv")
-ego_pose_filepath = joinpath("datasets", "v1.0-mini", "ego_pose.json")
+csv_filepath = joinpath("..", "datasets", "processed", "lidar_scans_sequential.csv")
+ego_pose_filepath = joinpath("..", "datasets", "v1.0-mini", "ego_pose.json")
 
 # Read the CSV file with sample tokens
 println("Loading LiDAR samples CSV file from: ", csv_filepath)
