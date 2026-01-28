@@ -7,4 +7,7 @@
 # Ignore json files
 *.json
 
+# Ignore csv files
+*.csv
+
 debug_sandbox.jl
