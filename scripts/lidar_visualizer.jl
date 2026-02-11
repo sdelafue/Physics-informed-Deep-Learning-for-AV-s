@@ -1,6 +1,11 @@
+using Pkg
+parent_dir = dirname(@__DIR__)
+print(parent_dir)
+Pkg.activate(parent_dir)
+
+
 using GLMakie
 using Statistics
-
 # === CONFIGURATION ===
 const COLOR_BY = :height  # Options: :height, :intensity, :distance
 
