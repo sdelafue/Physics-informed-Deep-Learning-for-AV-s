@@ -6,8 +6,8 @@ using LinearAlgebra
 using Statistics
 
 # Define file paths
-csv_filepath = joinpath("datasets", "processed", "lidar_scans_sequential.csv")
-ego_pose_filepath = joinpath("datasets", "v1.0-mini", "ego_pose.json")
+csv_filepath = joinpath("..", "datasets", "processed", "lidar_scans_sequential.csv")
+ego_pose_filepath = joinpath("..", "datasets", "v1.0-mini", "ego_pose.json")
 
 # Read the CSV file with sample tokens
 println("Loading LiDAR samples CSV file from: ", csv_filepath)
@@ -264,7 +264,7 @@ println("\n" * "="^60)
 println("Saving processed data...")
 println("="^60)
 
-output_filepath = joinpath("datasets", "processed", "ego_vehicle_states.csv")
+output_filepath = joinpath("..", "datasets", "processed", "ego_vehicle_states.csv")
 CSV.write(output_filepath, df_lidar)
 
 println("Data saved to: ", output_filepath)
@@ -284,5 +284,6 @@ println("  - Orientation: ego_yaw (radians)")
 println("  - Velocity: vx, vy, speed (m/s)")
 println("  - Acceleration: ax, ay, accel (m/s²)")
 println("  - Angular velocity: yaw_rate (rad/s)")
-println("  - Temporal: timestamp")
 println("  - Wheelbase (L) - vehicle-specific constant")
+println("  - Steering angle (radians) ")
+println("  - Temporal: timestamp")
