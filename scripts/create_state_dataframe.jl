@@ -6,8 +6,8 @@ using LinearAlgebra
 using Statistics
 
 # Define file paths
-csv_filepath = joinpath("..", "datasets", "processed", "lidar_scans_sequential.csv")
-ego_pose_filepath = joinpath("..", "datasets", "v1.0-mini", "ego_pose.json")
+csv_filepath = joinpath("datasets", "processed", "lidar_scans_sequential.csv")
+ego_pose_filepath = joinpath("datasets", "v1.0-mini", "ego_pose.json")
 
 # Read the CSV file with sample tokens
 println("Loading LiDAR samples CSV file from: ", csv_filepath)
@@ -51,13 +51,17 @@ println("\n" * "="^60)
 println("Extracting ego vehicle states for all samples...")
 println("="^60)
 
+const WHEELBASE_LENGTH = 2.7
+
 # Initialize arrays
 ego_x = Float64[]
 ego_y = Float64[]
 ego_z = Float64[]
 ego_yaw = Float64[]
+ego_steering_angle = Float64
 timestamps = Int64[]
 
+prev_yaw = 0
 # Extract position and yaw for each sample
 for i in 1:nrow(df_lidar)
     ego_token = df_lidar[i, :ego_pose_token]
@@ -200,6 +204,20 @@ df_lidar.yaw_rate = yaw_rate
 
 println("Yaw rate calculation complete!")
 
+println("\nCalculating steering angle")
+
+steering_angle = Float64[]
+
+for i in 1:nrow(df_lidar)
+    vel_magnitude = sqrt((df_lidar.vx[i] ^ 2) + (df_lidar.vy[i] ^ 2))
+    str_angle = (WHEELBASE_LENGTH * df_lidar.yaw_rate[i]) / vel_magnitude
+    push!(steering_angle, str_angle)
+end
+
+df_lidar.steering_angle = steering_angle
+
+println("Steering angle calculation complete")
+
 # Display results
 println("\n" * "="^60)
 println("First 10 samples with complete ego vehicle states:")
@@ -229,6 +247,11 @@ println("\nYaw Rate:")
 println("  Mean: ", round(mean(abs.(valid_yaw_rates)), digits=4), " rad/s")
 println("  Max: ", round(maximum(abs.(valid_yaw_rates)), digits=4), " rad/s")
 
+valid_steering_angles = filter(!isnan, steering_angle)
+println("\nSteering angle:")
+println("  Mean: ", round(mean(abs.(valid_steering_angles)), digits=4), " rad/s")
+println("  Max: ", round(maximum(abs.(valid_steering_angles)), digits=4), " rad/s")
+
 println("\n" * "="^60)
 println("Kinematic Bicycle Model State Variables Ready!")
 println("="^60)
@@ -241,7 +264,7 @@ println("\n" * "="^60)
 println("Saving processed data...")
 println("="^60)
 
-output_filepath = joinpath("..", "datasets", "processed", "ego_vehicle_states.csv")
+output_filepath = joinpath("datasets", "processed", "ego_vehicle_states.csv")
 CSV.write(output_filepath, df_lidar)
 
 println("Data saved to: ", output_filepath)

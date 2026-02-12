@@ -1,1 +1,0 @@
-This text file is meant to function as a placeholder that allows for the folders to exist in the GitHub repo. This text file can be ignored. 
