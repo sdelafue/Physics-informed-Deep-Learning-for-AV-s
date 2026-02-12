@@ -218,6 +218,24 @@ df_lidar.steering_angle = steering_angle
 
 println("Steering angle calculation complete")
 
+println("\nCalculating steering angle")
+
+steering_rate = Float64[]
+
+for i in 1:nrow(df_lidar)
+    if i == 1
+        push!(steering_rate, NaN)
+    else
+        dt = (timestamps[i] - timestamps[i-1]) / 1e6
+        str_rate = (steering_angle[i] - steering_angle[i - 1]) / dt
+        push!(steering_rate, str_rate)
+    end
+end
+
+df_lidar.steering_rate = steering_rate
+
+println("Steering angle rate calculation complete")
+
 # Display results
 println("\n" * "="^60)
 println("First 10 samples with complete ego vehicle states:")
@@ -252,6 +270,11 @@ println("\nSteering angle:")
 println("  Mean: ", round(mean(abs.(valid_steering_angles)), digits=4), " rad/s")
 println("  Max: ", round(maximum(abs.(valid_steering_angles)), digits=4), " rad/s")
 
+valid_steering_rates = filter(!isnan, steering_rate)
+println("\nSteering angle:")
+println("  Mean: ", round(mean(abs.(valid_steering_rates)), digits=4), " rad/s")
+println("  Max: ", round(maximum(abs.(valid_steering_rates)), digits=4), " rad/s")
+
 println("\n" * "="^60)
 println("Kinematic Bicycle Model State Variables Ready!")
 println("="^60)
@@ -280,10 +303,9 @@ println("Dataset Summary for Physics-Informed Model:")
 println("="^60)
 println("Available State Variables:")
 println("  - Position: ego_x, ego_y, ego_z")
-println("  - Orientation: ego_yaw (radians)")
+println("  - Orientation: ego_yaw, steering_angle (radians)")
 println("  - Velocity: vx, vy, speed (m/s)")
 println("  - Acceleration: ax, ay, accel (m/s²)")
-println("  - Angular velocity: yaw_rate (rad/s)")
+println("  - Angular velocity: yaw_rate, steering_angle rate (rad/s)")
 println("  - Wheelbase (L) - vehicle-specific constant")
-println("  - Steering angle (radians) ")
 println("  - Temporal: timestamp")
