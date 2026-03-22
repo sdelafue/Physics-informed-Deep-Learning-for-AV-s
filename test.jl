@@ -8,8 +8,11 @@ using Random
 using CSV
 using DataFrames
 
-# Load the main code
-include("lstm_baseline.jl")
+# File paths for the model and testing functions
+model_filepath = "models/lstm_baseline.jl"
+test_filepath = "utils/testing_functions/model_testing.jl"
+include(model_filepath)
+include(test_filepath)
 
 # Run the example
 println("=" ^ 60)
