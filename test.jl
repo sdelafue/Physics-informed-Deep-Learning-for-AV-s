@@ -10,7 +10,7 @@ using DataFrames
 
 # File paths for the model and testing functions
 model_filepath = "models/lstm_baseline.jl"
-test_filepath = "utils/model_testing/testing_helper_functions.jl"
+test_filepath = "utils/testing_functions/model_testing.jl"
 include(model_filepath)
 include(test_filepath)
 
