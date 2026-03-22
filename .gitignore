@@ -10,4 +10,5 @@
 # Ignore csv files
 *.csv
 
-debug_sandbox.jl
+.claude/
+sandbox.jl
