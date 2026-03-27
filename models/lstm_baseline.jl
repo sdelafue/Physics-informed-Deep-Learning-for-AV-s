@@ -2,6 +2,7 @@
 using Pkg
 using Flux
 using Statistics
+using Printf
 using Random
 using CSV
 using DataFrames
@@ -67,6 +68,13 @@ function baseline_loss(model, past_states, future_states)
     return Flux.mse(predictions, future_states)
 end
 
+# Returns per-variable MSE as a 5-element vector: [x, y, v, a, yaw]
+function per_variable_loss(model, past_states, future_states)
+    predictions = predict_trajectory(model, past_states, size(future_states, 2))
+    diff_sq = (predictions .- future_states) .^ 2
+    return vec(mean(diff_sq, dims=2))  # mean over time steps, one value per state var
+end
+
 # ==============================================================================
 # TRAINING LOOP
 # ==============================================================================
@@ -90,6 +98,19 @@ function train_model!(model, train_data; epochs::Int=100, lr::Float64=0.001)
 
         if epoch % 10 == 0
             println("Epoch $epoch: Loss = $(round(avg_loss, digits=6))")
+
+            # Accumulate per-variable MSE (no gradients needed)
+            var_losses = zeros(Float64, 5)
+            for (past, future) in train_data
+                var_losses .+= per_variable_loss(model, past, future)
+            end
+            var_losses ./= length(train_data)
+
+            labels = ["x", "y", "v", "a", "yaw"]
+            units  = ["m²", "m²", "m²/s²", "m²/s⁴", "rad²"]
+            for i in 1:5
+                @printf("  %-4s (%-8s) = %.6f\n", labels[i], units[i], var_losses[i])
+            end
         end
     end
 end
