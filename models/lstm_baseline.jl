@@ -4,8 +4,6 @@ using Flux
 using Statistics
 using Printf
 using Random
-using CSV
-using DataFrames
 
 # ==============================================================================
 # MODEL DEFINITION
@@ -37,23 +35,24 @@ function predict_trajectory(model::TrajectoryLSTM, past_states, n_future::Int)
     hidden_dim = size(model.encoder.Wi, 1) ÷ 4
 
     # Initialize hidden and cell states as zeros
-    h = zeros(Float32, hidden_dim)
-    c = zeros(Float32, hidden_dim)
+    h = zeros(eltype(past_states), hidden_dim)
+    c = zeros(eltype(past_states), hidden_dim)
+
 
     # Encode the past trajectory
-    for t in 1:size(past_states, 2)
-        _, (h, c) = model.encoder(past_states[:, t], (h, c))
+    for t in 1:size(past_states, 1)
+        _, (h, c) = model.encoder(past_states[t, :], (h, c))
     end
 
     # Autoregressively predict future using Zygote-friendly Flux.Recur pattern
     # Use foldl to accumulate predictions without in-place mutation
-    current_state = past_states[:, end]
-    init = (current_state, h, c, similar(past_states, size(past_states, 1), 0))
+    current_state = past_states[end, :]
+    init = (current_state, h, c, similar(past_states, 0, size(past_states, 2)))
 
     result = foldl(1:n_future; init=init) do (cur, h_acc, c_acc, preds), _
         output, (h_new, c_new) = model.encoder(cur, (h_acc, c_acc))
         next_state = model.decoder(output)
-        (next_state, h_new, c_new, hcat(preds, next_state))
+        (next_state, h_new, c_new, vcat(preds, next_state'))
     end
 
     return result[4]
@@ -64,15 +63,15 @@ end
 # ==============================================================================
 
 function baseline_loss(model, past_states, future_states)
-    predictions = predict_trajectory(model, past_states, size(future_states, 2))
+    predictions = predict_trajectory(model, past_states, size(future_states, 1))
     return Flux.mse(predictions, future_states)
 end
 
 # Returns per-variable MSE as a 5-element vector: [x, y, v, a, yaw]
 function per_variable_loss(model, past_states, future_states)
-    predictions = predict_trajectory(model, past_states, size(future_states, 2))
+    predictions = predict_trajectory(model, past_states, size(future_states, 1))
     diff_sq = (predictions .- future_states) .^ 2
-    return vec(mean(diff_sq, dims=2))  # mean over time steps, one value per state var
+    return vec(mean(diff_sq, dims=1))  # mean over time steps, one value per state var
 end
 
 # ==============================================================================
@@ -100,16 +99,15 @@ function train_model!(model, train_data; epochs::Int=100, lr::Float64=0.001)
             println("Epoch $epoch: Loss = $(round(avg_loss, digits=6))")
 
             # Accumulate per-variable MSE (no gradients needed)
-            var_losses = zeros(Float64, 5)
+            state_dim = size(first(train_data)[2], 2)
+            var_losses = zeros(Float64, state_dim)
             for (past, future) in train_data
                 var_losses .+= per_variable_loss(model, past, future)
             end
             var_losses ./= length(train_data)
 
-            labels = ["x", "y", "v", "a", "yaw"]
-            units  = ["m²", "m²", "m²/s²", "m²/s⁴", "rad²"]
-            for i in 1:5
-                @printf("  %-4s (%-8s) = %.6f\n", labels[i], units[i], var_losses[i])
+            for i in 1:state_dim
+                @printf("  var_%d = %.6f\n", i, var_losses[i])
             end
         end
     end
@@ -117,48 +115,11 @@ end
 
 
 """
-Load trajectory sequences from your preprocessed CSV files.
-
-Assumes CSV has columns: sample_token, timestamp, x, y, v, a, yaw
-And data is sorted by sample_token, then timestamp.
-"""
-function load_trajectory_data(csv_path::String, n_past::Int=10, n_future::Int=30)
-    df = CSV.read(csv_path, DataFrame)
-    
-    # Group by sample_token (each represents one scene/sequence)
-    grouped = groupby(df, :sample_token)
-    
-    train_data = []
-    
-    for group in grouped
-        # Extract state variables
-        states = Matrix(group[:, [:x, :y, :v, :a, :yaw]])'  # Transpose to (5, T)
-        
-        n_timesteps = size(states, 2)
-        
-        # Create sliding windows
-        for i in 1:(n_timesteps - n_past - n_future + 1)
-            past = states[:, i:(i + n_past - 1)]
-            future = states[:, (i + n_past):(i + n_past + n_future - 1)]
-            
-            push!(train_data, (Float32.(past), Float32.(future)))
-        end
-    end
-    
-    return train_data
-end
-
-# Usage:
-# train_data = load_trajectory_data("path/to/your/trajectories.csv")
-# model = TrajectoryLSTM(5, 64)
-# train_model!(model, train_data, epochs=100, lr=0.001)
-
-"""
 Physics-informed loss (pending full implementation).
 """
 function physics_informed_loss(model, past_states, future_states, λ=0.1)
-    predictions = predict_trajectory(model, past_states, size(future_states, 2))
-    
+    predictions = predict_trajectory(model, past_states, size(future_states, 1))
+
     # Data loss
     data_loss = Flux.mse(predictions, future_states)
     
