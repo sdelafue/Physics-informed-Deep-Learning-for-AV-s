@@ -1,10 +1,3 @@
-using Pkg
-Pkg.activate(joinpath(@__DIR__))
-Pkg.instantiate()
-
-using Flux
-using Statistics
-using Random
 
 # Include order matters: data loader → model → testing functions
 include("utils/data_loading/data_loading_helper_functions.jl")

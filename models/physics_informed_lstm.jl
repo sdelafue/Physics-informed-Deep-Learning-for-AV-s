@@ -68,10 +68,30 @@ function baseline_loss(model, past_states, future_states)
     return Flux.mse(predictions, future_states)
 end
 
+# Returns per-variable MSE as a 5-element vector: [x, y, v, a, yaw]
 function per_variable_loss(model, past_states, future_states)
     predictions = predict_trajectory(model, past_states, size(future_states, 1))
     diff_sq = (predictions .- future_states) .^ 2
     return vec(mean(diff_sq, dims=1))  # mean over time steps, one value per state var
+end
+
+"""
+Physics-informed loss (pending full implementation).
+"""
+function physics_informed_loss(model, past_states, future_states, λ=0.1)
+    predictions = predict_trajectory(model, past_states, size(future_states, 1))
+
+    # Data loss
+    data_loss = Flux.mse(predictions, future_states)
+    
+    # Physics loss (placeholder - you'll add your constraint functions)
+    # phys_loss = position_constraint(predictions) + 
+    #             velocity_constraint(predictions) + 
+    #             yaw_constraint(predictions)
+    
+    # return data_loss + λ * phys_loss
+    
+    return data_loss  # For now, just data loss
 end
 
 # ==============================================================================
