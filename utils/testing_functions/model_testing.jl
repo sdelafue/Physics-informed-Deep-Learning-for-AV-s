@@ -1,5 +1,6 @@
 using Pkg
 using Flux
+using JLD2
 using Statistics
 using Random
 using CSV
@@ -52,9 +53,10 @@ end
 # REAL DATA TRAINING AND PREDICTION EXPORT
 # ==============================================================================
 
-function train_on_real_data(; epochs::Int=100, lr::Float64=0.001,
+function train_on_real_data(model_type::String;
+                              epochs::Int=100, lr::Float64=0.001,
                               hidden_dim::Int=64,
-                              output_path::String="predictions.txt")
+                              report_dir::String="exported_data")
     state_dim = 7   # [dt, x, y, yaw, vx, vy, yaw_rate]
 
     # ------------------------------------------------------------------
@@ -81,39 +83,67 @@ function train_on_real_data(; epochs::Int=100, lr::Float64=0.001,
     train_model!(model, train_data, epochs=epochs, lr=lr)
 
     # ------------------------------------------------------------------
-    # Step 4: Run predictions on test split and export to text file
+    # Step 4: Run predictions on test split and accumulate per-sample metrics
     # ------------------------------------------------------------------
-    feature_names = ["dt", "x", "y", "yaw", "vx", "vy", "yaw_rate"]
-    col_width = 14
+    state_cols      = 2:state_dim   # columns 2-7 exclude dt
+    # The report helpers split export_file_pth into dirname (output directory)
+    # and basename (filename prefix), so we include a "mae" leaf to get the
+    # correct subdirectory structure.
+    per_sample_base = joinpath(report_dir, "plotted_metrics", "per_sample", "mae")
+    grand_avg_base  = joinpath(report_dir, "plotted_metrics", "grand_averages", "mae")
+    csv_dir         = joinpath(report_dir, "csv_metrics")
 
-    open(output_path, "w") do f
-        println(f, "TRAJECTORY LSTM — TEST SET PREDICTIONS")
-        println(f, "Model: state_dim=$state_dim  hidden_dim=$hidden_dim  epochs=$epochs  lr=$lr")
-        println(f, "Test samples: $(length(test_data))")
-        println(f, "="^(col_width * state_dim + 20))
+    mse_list  = Tuple[]
+    mae_list  = Tuple[]
+    mape_list = Tuple[]
 
-        for (i, (past, future)) in enumerate(test_data)
-            n_future  = size(future, 1)
+    for (past, future) in test_data
+        n_future_steps = size(future, 1)
+        prediction     = predict_trajectory(model, past, n_future_steps)
 
-            prediction = predict_trajectory(model, past, n_future)
+        pred_f64   = Float64.(prediction)
+        actual_f64 = Float64.(future)
 
-            # ------ sample header ------
-            println(f, "\nSample $i")
-            println(f, "-"^(col_width * state_dim + 20))
+        mse_vals  = vec(mean(
+            (pred_f64[:, state_cols] .- actual_f64[:, state_cols]).^2; dims=1))
+        mae_vals  = vec(mean(
+            abs.(pred_f64[:, state_cols] .- actual_f64[:, state_cols]); dims=1))
+        mape_vals = vec(mean(
+            abs.((pred_f64[:, state_cols] .- actual_f64[:, state_cols]) ./
+                 (abs.(actual_f64[:, state_cols]) .+ 1e-8)) .* 100; dims=1))
 
-            # ------ column headers ------
-            header = join(lpad.(feature_names, col_width), "")
-            println(f, lpad("timestep", 10) * header)
-            println(f, "-"^(col_width * state_dim + 10))
+        push!(mse_list,  Tuple(mse_vals))
+        push!(mae_list,  Tuple(mae_vals))
+        push!(mape_list, Tuple(mape_vals))
 
-            # ------ one line per predicted timestep ------
-            for t in 1:n_future
-                row_vals = join([@sprintf("%14.6f", prediction[t, j]) for j in 1:state_dim], "")
-                println(f, lpad(string(t), 10) * row_vals)
-            end
-        end
+        generate_mae_histogram(pred_f64, actual_f64;
+                               export_file_pth=per_sample_base,
+                               model_type=model_type,
+                               split="Test Set")
     end
 
-    println("\nPredictions written to: $output_path")
+    # ------------------------------------------------------------------
+    # Step 5: Persist MAE list for cross-model comparison plots
+    # ------------------------------------------------------------------
+    mae_jld2_path = joinpath(report_dir, "$(model_type)_test_mae.jld2")
+    jldsave(mae_jld2_path; mae_list)
+    println("Test MAE list saved to: $mae_jld2_path")
+
+    # ------------------------------------------------------------------
+    # Step 6: Grand-average MAE histogram across the full test split
+    # ------------------------------------------------------------------
+    generate_grand_average_mae_histogram(mae_list;
+                                         export_file_pth=grand_avg_base,
+                                         model_type=model_type,
+                                         split="Test Set")
+
+    # ------------------------------------------------------------------
+    # Step 7: Export per-sample MSE / MAE / MAPE to CSV
+    # ------------------------------------------------------------------
+    export_to_csv(mse_list, mae_list, mape_list;
+                  export_file_pth=csv_dir,
+                  model_type=model_type)
+
+    println("Reports exported to: $report_dir")
     return model
 end
