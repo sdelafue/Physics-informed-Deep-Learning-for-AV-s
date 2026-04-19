@@ -81,6 +81,8 @@ function train_on_real_data(model_type::String;
     model = TrajectoryLSTM(state_dim, hidden_dim)
     println("\nStarting training on real data...")
     train_model!(model, train_data, epochs=epochs, lr=lr)
+    save_model(model, joinpath(report_dir, "$(model_type)_model"))
+    println("Model saved to: $(joinpath(report_dir, "$(model_type)_model.jld2"))")
 
     # ------------------------------------------------------------------
     # Step 4: Run predictions on test split and accumulate per-sample metrics
