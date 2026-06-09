@@ -94,8 +94,10 @@ end
 
 
 # ============================================================================
-# TEST CASES
+# TEST CASES — only executed when this file is run directly
 # ============================================================================
+
+if abspath(PROGRAM_FILE) == @__FILE__
 
 println("="^70)
 println("Testing Physics-Informed Yaw Update Loss Function")
@@ -259,3 +261,5 @@ println("  • Velocity (v): Higher speed → faster yaw rate for same steering"
 println("  • Steering angle (delta): Larger angle → sharper turn")
 println("  • Wheelbase (L): Longer wheelbase → gentler turns for same steering")
 println("  • Time step (dt): Larger dt → larger yaw change per step")
+
+end # if abspath(PROGRAM_FILE) == @__FILE__

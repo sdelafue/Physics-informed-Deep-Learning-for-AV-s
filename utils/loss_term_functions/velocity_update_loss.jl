@@ -85,8 +85,10 @@ end
 
 
 # ============================================================================
-# TEST CASES
+# TEST CASES — only executed when this file is run directly
 # ============================================================================
+
+if abspath(PROGRAM_FILE) == @__FILE__
 
 println("="^70)
 println("Testing Physics-Informed Velocity Update Loss Function")
@@ -206,3 +208,5 @@ println()
 println("="^70)
 println("All tests complete!")
 println("="^70)
+
+end # if abspath(PROGRAM_FILE) == @__FILE__

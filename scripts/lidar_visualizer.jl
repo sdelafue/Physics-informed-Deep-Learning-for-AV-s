@@ -3,11 +3,25 @@ parent_dir = dirname(@__DIR__)
 print(parent_dir)
 Pkg.activate(parent_dir)
 
-
 using GLMakie
+using CairoMakie
 using Statistics
+using JLD2
+
 # === CONFIGURATION ===
 const COLOR_BY = :height  # Options: :height, :intensity, :distance
+const CUSTOM_SCAN_DIR = joinpath(parent_dir, "datasets", "custom_lidar_scans")
+const EXPORTED_DATA_DIR = joinpath(parent_dir, "exported_data")
+
+struct LidarScan
+    timestamp::Float64
+    n::Int
+    angle_min::Float32
+    angle_inc::Float32
+    range_min::Float32
+    range_max::Float32
+    ranges::Vector{Float32}
+end
 
 # === HELPER FUNCTIONS ===
 function read_nuscenes_lidar(file_path::String)
@@ -18,7 +32,7 @@ function read_nuscenes_lidar(file_path::String)
     raw_data = reinterpret(Float32, read(file_path))
     num_points = div(length(raw_data), 5)
     data_matrix = reshape(raw_data, 5, num_points)
-    
+
     return (
         x = data_matrix[1, :],
         y = data_matrix[2, :],
@@ -36,7 +50,7 @@ function find_dataset_path()
         joinpath(pwd(), "v1.0-mini", "samples", "LIDAR_TOP"),
         joinpath(homedir(), "Downloads", "v1.0-mini", "samples", "LIDAR_TOP"),
     ]
-    
+
     for path in possible_paths
         if isdir(path) && !isempty(filter(f -> endswith(f, ".bin"), readdir(path)))
             return path
@@ -53,14 +67,14 @@ function get_dataset_path()
             return path
         end
     end
-    
+
     auto_path = find_dataset_path()
     if !isnothing(auto_path)
-        println("✓ Found dataset at: $auto_path")
+        println("Found dataset at: $auto_path")
         return auto_path
     end
-    
-    println("\n📁 Please enter the path to your LIDAR_TOP folder:")
+
+    println("\nPlease enter the path to your LIDAR_TOP folder:")
     path = strip(readline(), ['"', '\''])
     if !isdir(path)
         error("Invalid path: $path")
@@ -68,115 +82,247 @@ function get_dataset_path()
     return path
 end
 
+function get_custom_lidar_scan_dir()
+    if length(ARGS) > 0
+        path = strip(ARGS[1], ['"', '\''])
+        if isdir(path)
+            return path
+        end
+    end
+
+    if isdir(CUSTOM_SCAN_DIR)
+        println("Found custom LiDAR scan directory at: $CUSTOM_SCAN_DIR")
+        return CUSTOM_SCAN_DIR
+    end
+
+    error("Custom LiDAR scan directory not found: $CUSTOM_SCAN_DIR")
+end
+
+function load_lidar_scans_from_jld2(file_path::AbstractString)
+    data = load(file_path)
+
+    if haskey(data, "scans")
+        scans = data["scans"]
+    elseif !isempty(keys(data))
+        first_key = first(collect(keys(data)))
+        scans = data[first_key]
+    else
+        error("No datasets found in $file_path")
+    end
+
+    if !(scans isa AbstractVector)
+        error("Expected a vector of LiDAR scans in $file_path")
+    end
+
+    return collect(scans)
+end
+
+function get_valid_scan_points(scan::LidarScan)
+    count = min(scan.n, length(scan.ranges))
+    if count == 0
+        empty_vector = Float32[]
+        return (
+            x = empty_vector,
+            y = empty_vector,
+            ranges = empty_vector,
+            angles = empty_vector
+        )
+    end
+
+    angles = scan.angle_min .+ (0:(count - 1)) .* scan.angle_inc
+    ranges = scan.ranges[1:count]
+    valid_mask = isfinite.(ranges) .& (ranges .>= scan.range_min) .& (ranges .<= scan.range_max)
+
+    valid_ranges = ranges[valid_mask]
+    valid_angles = angles[valid_mask]
+
+    x = valid_ranges .* cos.(valid_angles)
+    y = valid_ranges .* sin.(valid_angles)
+
+    return (
+        x = x,
+        y = y,
+        ranges = valid_ranges,
+        angles = valid_angles
+    )
+end
+
+function lidar_scan_stats(scan::LidarScan, points)
+    valid_count = length(points.ranges)
+    total_count = min(scan.n, length(scan.ranges))
+
+    if valid_count == 0
+        return """
+        Scan Statistics:
+        Total Rays: $total_count
+        Valid Returns: 0
+        Timestamp: $(round(scan.timestamp, digits=3))
+        """
+    end
+
+    return """
+    Scan Statistics:
+    Total Rays: $total_count
+    Valid Returns: $valid_count
+    Range Min: $(round(minimum(points.ranges), digits=2)) m
+    Range Max: $(round(maximum(points.ranges), digits=2)) m
+    Range Mean: $(round(mean(points.ranges), digits=2)) m
+    Angle Min: $(round(rad2deg(scan.angle_min), digits=1)) deg
+    Angle Inc: $(round(rad2deg(scan.angle_inc), digits=3)) deg
+    Timestamp: $(round(scan.timestamp, digits=3))
+    """
+end
+
+function create_lidar_scan_figure(scan::LidarScan; title::AbstractString="LiDAR Scan")
+    points = get_valid_scan_points(scan)
+
+    fig = Figure(size=(1200, 800))
+
+    ax_scan = Axis(
+        fig[1, 1],
+        title=title,
+        xlabel="X (m)",
+        ylabel="Y (m)",
+        aspect=DataAspect()
+    )
+
+    if !isempty(points.x)
+        scatter!(
+            ax_scan,
+            points.x,
+            points.y,
+            color=points.ranges,
+            colormap=:viridis,
+            markersize=7
+        )
+
+        limits!(
+            ax_scan,
+            minimum(points.x) - 0.5,
+            maximum(points.x) + 0.5,
+            minimum(points.y) - 0.5,
+            maximum(points.y) + 0.5
+        )
+
+        Colorbar(
+            fig[1, 2],
+            limits=(minimum(points.ranges), maximum(points.ranges)),
+            colormap=:viridis,
+            label="Range (m)"
+        )
+    else
+        text!(ax_scan, 0.0, 0.0, text="No valid returns", align=(:center, :center))
+    end
+
+    ax_profile = Axis(
+        fig[2, 1],
+        title="Range Profile",
+        xlabel="Beam Index",
+        ylabel="Range (m)"
+    )
+
+    if !isempty(points.ranges)
+        scatter!(ax_profile, 1:length(points.ranges), points.ranges, markersize=5, color=:steelblue)
+    end
+
+    Label(
+        fig[2, 2],
+        lidar_scan_stats(scan, points),
+        tellwidth=true,
+        tellheight=false,
+        width=300,
+        halign=:left,
+        valign=:top,
+        fontsize=12
+    )
+
+    return fig
+end
+
+function visualize_lidar_scan(scan::LidarScan; title::AbstractString="LiDAR Scan")
+    fig = create_lidar_scan_figure(scan; title=title)
+    screen = display(fig)
+    return (fig = fig, screen = screen)
+end
+
+function visualize_lidar_scans_from_file(file_path::AbstractString; scan_index::Int=1)
+    scans = load_lidar_scans_from_jld2(file_path)
+
+    if isempty(scans)
+        error("No LiDAR scans found in $file_path")
+    end
+
+    bounded_index = clamp(scan_index, 1, length(scans))
+    scan = scans[bounded_index]
+    title = "$(basename(file_path)) | scan $bounded_index / $(length(scans))"
+
+    println("Visualizing $title")
+    println("  Valid points: $(length(get_valid_scan_points(scan).x))")
+
+    return visualize_lidar_scan(scan; title=title)
+end
+
+function visualize_all_lidar_scans(file_path::AbstractString)
+    scans = load_lidar_scans_from_jld2(file_path)
+    base_name = splitext(basename(file_path))[1]
+    output_dir = joinpath(EXPORTED_DATA_DIR, base_name)
+    mkpath(output_dir)
+
+    println("Exporting $(length(scans)) scans from $(basename(file_path)) to $output_dir")
+
+    for (index, scan) in enumerate(scans)
+        fig = create_lidar_scan_figure(
+            scan;
+            title="$(base_name) | scan $index / $(length(scans))"
+        )
+        output_file = joinpath(output_dir, "scan_$(index).png")
+        save(output_file, fig)
+    end
+
+    println("Finished exporting $(length(scans)) scans for $(basename(file_path))")
+    return output_dir
+end
+
 # === MAIN VISUALIZATION ===
-println("\n🎨 nuScenes Point Cloud Visualizer")
+println("\nCustom LiDAR Scan Visualizer")
 println("="^60)
 
-# Get dataset
-dataset_path = get_dataset_path()
-bin_files = filter(f -> endswith(f, ".bin"), readdir(dataset_path, join=true))
+scan_dir = get_custom_lidar_scan_dir()
+jld2_files = sort(filter(f -> endswith(lowercase(f), ".jld2"), readdir(scan_dir, join=true)))
 
-if isempty(bin_files)
-    error("No .bin files found!")
+if isempty(jld2_files)
+    error("No .jld2 files found in $scan_dir")
 end
 
-# Load a random sample
-sample_file = rand(bin_files)
-println("📊 Loading: $(basename(sample_file))")
+println("Found $(length(jld2_files)) .jld2 LiDAR files")
 
-data = read_nuscenes_lidar(sample_file)
-println("  └─ Points: $(length(data.x))")
-println("  └─ X range: [$(round(minimum(data.x), digits=1)), $(round(maximum(data.x), digits=1))] m")
-println("  └─ Y range: [$(round(minimum(data.y), digits=1)), $(round(maximum(data.y), digits=1))] m")
-println("  └─ Z range: [$(round(minimum(data.z), digits=1)), $(round(maximum(data.z), digits=1))] m")
+sample_file = first(jld2_files)
+sample_scans = load_lidar_scans_from_jld2(sample_file)
 
-# Compute colors based on selected mode
-if COLOR_BY == :height
-    colors = data.z
-    color_label = "Height (m)"
-elseif COLOR_BY == :intensity
-    colors = data.intensity
-    color_label = "Intensity"
-else  # :distance
-    colors = sqrt.(data.x.^2 .+ data.y.^2 .+ data.z.^2)
-    color_label = "Distance (m)"
+if isempty(sample_scans)
+    error("No LiDAR scans found in $(basename(sample_file))")
 end
 
-# Create 3D visualization
-println("\n🖼️  Generating 3D visualization...")
-fig = Figure(size=(1200, 800))
+println("Loading sample visualization from $(basename(sample_file))")
+println("  Total scans in file: $(length(sample_scans))")
 
-# 3D scatter plot
-ax3d = Axis3(fig[1, 1], 
-    title="nuScenes LiDAR Point Cloud",
-    xlabel="X (forward, m)",
-    ylabel="Y (left, m)",
-    zlabel="Z (up, m)",
-    aspect=:data
-)
+sample_scan = first(sample_scans)
+sample_points = get_valid_scan_points(sample_scan)
 
-scatter!(ax3d, data.x, data.y, data.z,
-    color=colors,
-    colormap=:viridis,
-    markersize=1.5,
-    alpha=0.6
-)
+println("  Sample scan valid returns: $(length(sample_points.x))")
+println("  Range bounds: [$(round(sample_scan.range_min, digits=2)), $(round(sample_scan.range_max, digits=2))] m")
+println("  Angle bounds: [$(round(rad2deg(sample_scan.angle_min), digits=2)), $(round(rad2deg(sample_scan.angle_min + (sample_scan.n - 1) * sample_scan.angle_inc), digits=2))] deg")
 
-Colorbar(fig[1, 2], 
-    limits=(minimum(colors), maximum(colors)),
-    colormap=:viridis,
-    label=color_label
-)
+sample_view = visualize_lidar_scans_from_file(sample_file; scan_index=1)
 
-# Bird's Eye View (XY plane)
-ax_bev = Axis(fig[2, 1],
-    title="Bird's Eye View (Top-Down)",
-    xlabel="X (forward, m)",
-    ylabel="Y (left, m)",
-    aspect=DataAspect()
-)
+println("Visualization ready")
+println("Exporting all scans from every .jld2 file in custom_lidar_scans")
 
-scatter!(ax_bev, data.x, data.y,
-    color=colors,
-    colormap=:viridis,
-    markersize=2,
-    alpha=0.5
-)
+for file_path in jld2_files
+    visualize_all_lidar_scans(file_path)
+end
 
-# Statistics panel
-stats_text = """
-Dataset Statistics:
-━━━━━━━━━━━━━━━━━━━
-Total Points: $(length(data.x))
-X: [$(round(minimum(data.x), digits=1)), $(round(maximum(data.x), digits=1))] m
-Y: [$(round(minimum(data.y), digits=1)), $(round(maximum(data.y), digits=1))] m
-Z: [$(round(minimum(data.z), digits=1)), $(round(maximum(data.z), digits=1))] m
+println("Finished exporting LiDAR scan PNGs for all .jld2 files")
+println("Close the visualization window to exit")
 
-Intensity: [$(round(minimum(data.intensity), digits=1)), $(round(maximum(data.intensity), digits=1))]
-Ring Index: [$(Int(minimum(data.ring_index))), $(Int(maximum(data.ring_index)))]
-
-Ground (~z < -1.5m): $(sum(data.z .< -1.5)) points
-Above vehicle (~z > 0): $(sum(data.z .> 0)) points
-"""
-
-Label(fig[2, 2], stats_text, 
-    tellwidth=true,        
-    tellheight=false,
-    width=300,             
-    halign=:left,
-    valign=:top,
-    fontsize=12
-)
-
-println("✅ Visualization ready!")
-println("\n💡 Controls:")
-println("  - Left click + drag: Rotate 3D view")
-println("  - Right click + drag: Pan")
-println("  - Scroll: Zoom")
-println("  - Close window to exit")
-
-display(fig)
-
-# Keep window open
-println("\n⏳ Displaying... (close the window to exit)")
-wait(display(fig))
+wait(sample_view.screen)

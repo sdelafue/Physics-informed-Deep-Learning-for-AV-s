@@ -12,3 +12,9 @@
 
 .claude/
 sandbox.jl
+
+*.ipynb
+*.jld2
+
+/exported_data
+/datasets/custom_lidar_scans
